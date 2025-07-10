@@ -2,8 +2,8 @@ import ikpy.chain
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from matplotlib.animation import FuncAnimation
 
-# --- 1, 2, 3, 4번 부분은 이전과 동일 ---
 # --- 1. 로봇 모델 불러오기 ---
 script_dir = Path(__file__).parent
 urdf_file_path = script_dir / "my_robot.urdf"
@@ -13,12 +13,12 @@ my_robot_chain = ikpy.chain.Chain.from_urdf_file(
 )
 
 # --- '준비 위치' 계산 ---
-home_position = [0.15, 0, 0.25]
+home_position = [0.05, 0, 0.20 ]
 initial_angles_rad = my_robot_chain.inverse_kinematics(home_position)
 print(f"✅ '준비 위치' ({home_position}) 자세 계산 완료.")
 
 # --- 2. 사용자가 원하는 최종 목표 지점 설정 ---
-desired_target = np.array([0.10, 0.0, .40])
+desired_target = np.array([0.30, 0.10, 0.30])
 print(f"\n원하는 최종 목표 지점: {desired_target}")
 
 # --- 3. '자동 후퇴 탐색' 로직 ---
@@ -40,44 +40,42 @@ for i in range(max_iterations):
     except Exception as e:
         direction_vector = current_target / np.linalg.norm(current_target)
         current_target -= direction_vector * 0.01
-        print(f"  -> 시도 {i+1}: 실패. {current_target} 지점으로 후퇴하여 재시도...")
+        # print(f"  -> 시도 {i+1}: 실패. {current_target} 지점으로 후퇴하여 재시도...")
 
 # --- 최종 결과 확인 ---
 if final_angles_rad is None:
     print("\n❌ 자동 탐색 실패: 주변에서 도달 가능한 지점을 찾을 수 없습니다.")
 else:
-    # --- 5. 시각화 (그리기 순서 변경) ---
+    # --- 5. 애니메이션 시각화 ---
     fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
     
-    # --- 5-1. 로봇 팔 먼저 모두 그리기 ---
-    my_robot_chain.plot(initial_angles_rad, ax)
-    my_robot_chain.plot(final_angles_rad, ax)
+    # 애니메이션 프레임 수 설정
+    num_frames = 50
 
-    # --- 5-2. 그 다음에 글자와 숫자, 경로를 추가 ---
-    def plot_joint_numbers(angles_rad, text_prefix, color):
-        all_frames = my_robot_chain.forward_kinematics(angles_rad, full_kinematics=True)
-        for i, frame_matrix in enumerate(all_frames[1:7]):
-            if i < 5:
-                position = frame_matrix[:3, 3]
-                ax.text(position[0], position[1], position[2], f"  {text_prefix}{i+1}", color=color, fontsize=10, fontweight='bold')
+    # 시작 각도와 최종 각도 사이를 보간하여 중간 각도들 생성
+    all_angles = np.linspace(initial_angles_rad, final_angles_rad, num=num_frames)
 
-    # 시작/최종 자세에 번호 표시
-    plot_joint_numbers(initial_angles_rad, "S", "blue")
-    plot_joint_numbers(final_angles_rad, "F", "red")
-    
-    # 나머지 시각화 요소
-    ax.text(home_position[0], home_position[1], home_position[2], "  Start", color='blue')
-    ax.text(current_target[0], current_target[1], current_target[2], "  Final", color='green')
-    ax.scatter(desired_target[0], desired_target[1], desired_target[2], c='red', marker='x', s=100, label='Desired')
-    path_x = [home_position[0], current_target[0]]
-    path_y = [home_position[1], current_target[1]]
-    path_z = [home_position[2], current_target[2]]
-    ax.plot(path_x, path_y, path_z, 'r--')
-    
-    ax.legend(['End-Effector Path', 'Desired'])
-    ax.set_title("Robot Arm: Auto-Search IK Result")
-    ax.set_xlim([-0.5, 0.5]); ax.set_ylim([-0.5, 0.5]); ax.set_zlim([0, 0.6])
-    ax.set_xlabel("X-axis (m)"); ax.set_ylabel("Y-axis (m)"); ax.set_zlabel("Z-axis (m)")
-    
-    print("\n3D 그래프 창을 닫으면 프로그램이 종료됩니다.")
+    # 애니메이션의 각 프레임을 업데이트하는 함수
+    def animate(frame_index):
+        # 이전 프레임의 내용을 지움
+        ax.clear()
+
+        # 현재 프레임의 각도로 로봇 팔을 그림
+        my_robot_chain.plot(all_angles[frame_index], ax)
+        
+        # 그래프 배경 및 라벨 등 고정된 요소들을 매번 다시 그려줌
+        ax.set_title(f"Robot Arm Animation (Frame {frame_index+1}/{num_frames})")
+        ax.set_xlim([-0.5, 0.5]); ax.set_ylim([-0.5, 0.5]); ax.set_zlim([0, 0.6])
+        ax.set_xlabel("X-axis (m)"); ax.set_ylabel("Y-axis (m)"); ax.set_zlabel("Z-axis (m)")
+        
+        # 시작/목표 지점 텍스트 및 마커 표시
+        ax.text(home_position[0], home_position[1], home_position[2], "  Start", color='blue')
+        ax.text(current_target[0], current_target[1], current_target[2], "  Final", color='green')
+        ax.scatter(desired_target[0], desired_target[1], desired_target[2], c='red', marker='x', s=100)
+
+    # FuncAnimation 객체를 생성하여 애니메이션 실행
+    # interval: 프레임 간 간격 (밀리초)
+    ani = FuncAnimation(fig, animate, frames=num_frames, interval=50)
+
+    print("\n애니메이션을 재생합니다. 그래프 창을 닫으면 프로그램이 종료됩니다.")
     plt.show()
